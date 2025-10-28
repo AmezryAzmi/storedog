@@ -206,6 +206,28 @@ services:
       com.datadoghq.ad.instances: '[{"nginx_status_url": "http://%%host%%:81/nginx_status/"}]'
 
   # Primary database
+  dbm:
+    build:
+      context: ./services/dbm
+    command: gunicorn --bind dbm:7595 dbm:app # If using any other port besides the default 8282, overriding the CMD is required
+    depends_on:
+      - postgres
+      - dd-agent
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_HOST=postgres
+      - DD_ENV=${DD_ENV}
+      - DD_SERVICE=storedog-dbm
+      - DD_AGENT_HOST=dd-agent
+      - DD_LOGS_INJECTION=true
+      - DD_PROFILING_ENABLED=true
+      - DD_APPSEC_ENABLED=true
+      - DD_DBM_PROPAGATION_MODE=full
+    volumes:
+      - './services/dbm:/app'
+    networks:
+      - storedog-network
   postgres:
     build:
       context: ./services/postgres
@@ -217,15 +239,62 @@ services:
     networks:
       - storedog-network
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
     labels:
-      com.datadoghq.tags.service: 'store-db'
-      com.datadoghq.tags.version: '${DD_VERSION_POSTGRES:-15.0}'
-      com.datadoghq.ad.check_names: '["postgres"]'
-      com.datadoghq.ad.init_configs: '[{}]'
-      com.datadoghq.ad.instances: '[{"host":"%%host%%", "port":5432, "username":"datadog", "password":"datadog"}]'
-      com.datadoghq.ad.logs: '[{"source": "postgresql", "service":"store-db", "auto_multi_line_detection": true, "path": "/var/log/pg_log/postgresql*.json", "type": "file"}]'
+      com.datadoghq.tags.env: '${DD_ENV-dev}'
+      com.datadoghq.tags.service: 'postgres'
+      com.datadoghq.tags.version: '${DD_VERSION_POSTGRES-15}'
+      com.datadoghq.ad.check_names: '["postgres", "postgres"]'
+      com.datadoghq.ad.init_configs: '[{}, {}]'
+      com.datadoghq.ad.instances: '[
+        {
+        "dbm":true,
+        "host":"%%host%%",
+        "port":5432,
+        "username":"datadog",
+        "password":"datadog",
+        "relations": [{
+        "relation_name": "advertisement",
+        "relation_name": "discount",
+        "relation_name": "items",
+        "relation_name": "preorder_items",
+        "relation_name": "influencer"
+        }],
+        "query_samples": {
+        "enabled": true,
+        "explain_parameterized_queries": true
+        },
+        "max_relations": 400,
+        "collect_function_metrics": true,
+        "collection_interval": 1,
+        "collect_schemas": {
+        "enabled": true
+        }
+        },
+        {
+        "dbm":true,
+        "host":"%%host%%",
+        "port":5432,
+        "username":"datadog",
+        "password":"datadog",
+        "dbname": "storedog_db",
+        "relations": [{
+        "relation_regex": "spree_.*"
+        }],
+        "query_samples": {
+        "enabled": true,
+        "explain_parameterized_queries": true
+        },
+        "max_relations": 400,
+        "collect_function_metrics": true,
+        "collection_interval": 1,
+        "collect_schemas": {
+        "enabled": true
+        }
+        }]'
+      com.datadoghq.ad.logs: '[{"source": "postgresql", "service": "postgres", "auto_multi_line_detection": true, "path": "/var/log/pg_log/postgresql*.json", "type": "file"}]'
 
   # Cache and job queue
   redis:
